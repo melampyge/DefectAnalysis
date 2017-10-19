@@ -3,35 +3,38 @@
 
 ##############################################################################
 
+import argparse
 import numpy as np
 import math
 import performance_toolsWrapper
-import h5py
 import data_structures
 import misc_tools
 import plot_defects
-import argparse
+import read_write
+import find_defects
 
 ##############################################################################
 
 def find_clusters(x, y, dcrit, npoints, sim):
-    """ search for clusters; two points are defined as being
+    """ search for clusters: two points are defined as being
         part of the same cluster if they are within dcrit distance of each other"""
 
     ### allocate required arrays
 
-    clusters = np.zeros((npoints), dtype=np.int32) - 1
+    clusters = np.zeros((npoints), dtype=np.int32)-1
     neighbors = np.zeros((npoints, npoints), dtype=np.int32)
 
     ### generate a linked list
 
-    nsegx, nsegy, head, llist = gen_linked_list(x, y, sim.lx, sim.ly, dcrit, npoints)
+    nsegx, nsegy, head, llist = misc_tools.gen_linked_list(x, y, \
+        sim.lx, sim.ly, dcrit, npoints)
 
     ### buld a neighborhood matrix based on the criterion dcrit
 
     neighs = neighbors.ravel()
     performance_tools = performance_toolsWrapper.Performance_tools()
-    performance_tools.fill_neigh_matrix(neighs, llist, head, nsegx, nsegy, x, y, npoints, sim.lx, sim.ly, dcrit)
+    performance_tools.fill_neigh_matrix(neighs, llist, head, nsegx, nsegy, \
+        x, y, npoints, sim.lx, sim.ly, dcrit)
 
     ### recursive search for clusters within the neighbor matrix
 
@@ -90,15 +93,7 @@ def correct_cluster_pbc(x, y, clusters, lx, ly, dcrit, npoints):
 
         xcl, ycl = expand_cluster(x, y, lx, ly, clusters, i)
 
-        ### try first a simple 1D histogram method
-
-        #flag_1d = cluster_hist_1d(xcl, ycl, lx, ly, npts, dcrit)
-
-        ### if the 1D histogram approach fails, correct the pbcs point by point
-
-        #if flag_1d == 0:
-        #    isolated[i] = 0     # cluster is not isolated
-        #    correct_pbc_single(xcl, ycl, lx, ly, npts)
+        ### correct the pbcs point by point
 
         correct_pbc_single(xcl, ycl, lx, ly, npts)
 
@@ -145,64 +140,6 @@ def expand_cluster(x, y, lx, ly, clusters, i):
                 l = l + 1
 
     return xcl, ycl
-
-##############################################################################
-
-def cluster_hist_1d(xcl, ycl, lx, ly, npts, dcrit):
-    """ try to detect cluster by 1d histograms to correct for pbcs"""
-
-    ### compute 1D histograms
-
-    nxbins = int(3*lx/(dcrit))
-    #bx = 3*lx/nxbins
-    hx, xedges = np.histogram(xcl, bins = nxbins, range = (-lx,2*lx))
-    nybins = int(3*ly/(dcrit))
-    #by = 3*ly/nybins
-    hy, yedges = np.histogram(ycl, bins = nybins, range = (-ly,2*ly))
-
-    ### check whether the approach is feasible
-
-    if 0 in hx and 0 in hy:  # 1d approach works
-
-        ### find boundaries
-
-        xmin = -1
-        xmax = -1
-        ymin = -1
-        ymax = -1
-        jstop = -1
-        for j in range(nxbins-1):
-            if hx[j] == 0 and hx[j+1] > 0:
-                xmin = xedges[j+1]
-                jstop = j
-                break
-        for j in range(jstop,nxbins-1):
-            if hx[j] > 0 and hx[j+1] == 0:
-                xmax = xedges[j+1]
-                break
-        for j in range(nybins-1):
-            if hy[j] == 0 and hy[j+1] > 0:
-                ymin = yedges[j+1]
-                jstop = j
-                break
-        for j in range(jstop,nybins-1):
-            if hy[j] > 0 and hy[j+1] == 0:
-                ymax = yedges[j+1]
-                break
-
-        ### map all point coordinates into the relevant area
-
-        for j in range(npts):
-            while xcl[j] < xmin:
-                xcl[j] += lx
-            while xcl[j] > xmax:
-                xcl[j] -= lx
-            while ycl[j] < ymin:
-                ycl[j] += ly
-            while ycl[j] > ymax:
-                ycl[j] -= ly
-        return 1
-    return 0
 
 ##############################################################################
 
@@ -472,9 +409,9 @@ def cluster_analysis(points, dcrit, ncrit, sim, step, xall, yall, cid):
 
     npoints = len(points[0])
     print 'possible points -> ', npoints
-    x = np.array(points[0], dtype=np.float64)
-    y = np.array(points[1], dtype=np.float64)
-    d = np.array(points[2], dtype=np.float64)
+    x = np.array(points[0], dtype=np.float32)
+    y = np.array(points[1], dtype=np.float32)
+    d = np.array(points[2], dtype=np.float32)
 
     ### find the clusters among the data points
     # clusters is a per point array with each element representing the cluster id the point belongs to
@@ -511,30 +448,31 @@ def cluster_analysis(points, dcrit, ncrit, sim, step, xall, yall, cid):
     return xcm, ycm
 
 ##############################################################################
-##############################################################################
 
 def main():
 
     ### get the data folder
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("-fl", "--folder", nargs="?", \
-                        const='/usr/users/iff_th2/duman/Defe/', \
-                        help="Folder containing data")
-    parser.add_argument("-sfl", "--savefolder", nargs="?", \
-                        const='/usr/users/iff_th2/duman/Defects/Output/cpp/', \
-                        help="Folder to save the data inside")
-    parser.add_argument("-figfl", "--figfolder", nargs="?", \
-                        const='/usr/users/iff_th2/duman/Defects/Output/Figures/', \
+    parser.add_argument("-sdfl", "--simdatafolder", \
+                        help="Folder containing the simulation data")
+    parser.add_argument("-dfl", "--datafolder", \
+                        help="Folder containing analysis data")
+    parser.add_argument("-sfl", "--savefolder", \
+                        help="Folder to save the resulting analysis data inside")
+    parser.add_argument("-figfl", "--figfolder", \
                         help="Folder to save the figures inside")
-    parser.add_argument("-ti", "--inittime", nargs="?", const=100, type=int, help="Initial time step")
-    parser.add_argument("-tf", "--fintime", nargs="?", const=153, type=int, help="Final timestep")
-    parser.add_argument("-s","--save_eps", action="store_true", help="Decide whether to save in eps or not")
+    parser.add_argument("-ti", "--inittime", nargs="?", const=10, \
+                        type=int, help="Initial time step")
+    parser.add_argument("-tf", "--fintime", nargs="?", const=100, \
+                        type=int, help="Final timestep")
+    parser.add_argument("-s","--savepdf", action="store_true", \
+                        help="Decide whether to save in pdf or not")
     args = parser.parse_args()
 
     ### read the data and general information from the folder
 
-    beads, sim = read_data(args.folder)
+    beads, sim = read_write.read_data(args.simdatafolder)
 
     rcut = 15.              # size of the interrogation circle
     dcut = 0.1              # defect strength cut
@@ -547,17 +485,19 @@ def main():
 
         ### load the possible defect points
 
-        sfilepath = args.folder + 'possible_defect_pts_cpp_' + str(step) + '.h5'
-        possible_defect_pts = load_h5_data(sfilepath)
+        sfilepath = args.datafolder + 'possible_defect_pts_cpp_' + str(step) + '.h5'
+        possible_defect_pts = read_write.load_h5_data(sfilepath)
 
         ### cluster the possible defect points and plot the cluster
 
-        xcm, ycm = examine_clusters.cluster_analysis(possible_defect_pts, dcrit, ncrit, sim, step, \
-                                                     beads.x[step, 0, :], beads.x[step, 1, :], beads.cid)
+        xcm, ycm = cluster_analysis(possible_defect_pts, dcrit, ncrit, sim, step, \
+            beads.xu[step, 0, :], beads.xu[step, 1, :], beads.cid)
 
-        ### for each of the defect points found by clustering calculate the defect strength and plot each point
+        ### for each of the defect points found by clustering
+        # calculate the defect strength and plot each point
 
-        defect_pts = compute_defects(xcm, ycm, beads, sim, rcut, dcut, step, args.figfolder)
+        defect_pts = find_defects.recompute_defects(\
+            xcm, ycm, beads, sim, rcut, dcut, step, args.figfolder)
 
         ### save the ultimate defect points
 

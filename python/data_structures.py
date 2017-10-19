@@ -60,8 +60,10 @@ class linked_list:
         ### put all the beads inside the list
 
         for i in range(sim.nbeads):
-            segx = int(x[i]/sim.lx*self.nsegx)
-            segy = int(y[i]/sim.ly*self.nsegy)
+            xi = misc_tools.calc_img_pos(x[i], sim.lx)
+            yi = misc_tools.calc_img_pos(y[i], sim.ly)
+            segx = int(xi/sim.lx*self.nsegx)
+            segy = int(yi/sim.ly*self.nsegy)
             cell = segx*self.nsegy + segy
             self.llist[i] = self.head[cell]
             self.head[cell] = i

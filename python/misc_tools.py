@@ -8,6 +8,13 @@ import math
 
 ##############################################################################
 
+def calc_img_pos(x, lx):
+    """ calculate image position"""
+
+    return x-np.floor(x/lx)*lx
+
+##############################################################################
+
 def gen_linked_list(x, y, lx, ly, dcrit, npoints):
     """ generate a hashed linked list to browse data points based on distance"""
 
@@ -25,6 +32,8 @@ def gen_linked_list(x, y, lx, ly, dcrit, npoints):
     ### fill list and head
 
     for i in range(npoints):
+        xi = calc_img_pos(x[i], sim.lx)
+        yi = calc_img_pos(y[i], sim.ly)
         segx = int(x[i]/lx*nsegx)
         segx = (segx+nsegx) % nsegx
         segy = int(y[i]/ly*nsegy)
