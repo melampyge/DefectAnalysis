@@ -119,7 +119,7 @@ int main (int argc, char *argv[]) {
   load the position data into the memory step by step 
   */
    
-  for (int step = 0; step < nsteps; step++) {
+  for (int step = 3500; step < nsteps; step++) {
     
     // print progress
     
@@ -251,7 +251,6 @@ int main (int argc, char *argv[]) {
   delete [] xpoints;	
   delete [] ypoints;
   delete [] check_again;
-  delete [] nbpp;
 
   // close the file pointers
   

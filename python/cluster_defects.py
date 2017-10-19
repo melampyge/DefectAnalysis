@@ -1,545 +1,575 @@
 
-""" Find defects in an ensemble of filaments at high densities"""
+""" cluster the defect points"""
 
 ##############################################################################
 
-import argparse
 import numpy as np
-import os
-import h5py
-import matplotlib as mpl
-mpl.use('Agg')
-import matplotlib.pyplot as plt
 import math
-from matplotlib.patches import Circle
-from numpy import linalg as LA
+import performance_toolsWrapper
+import h5py
+import data_structures
 import misc_tools
 import plot_defects
-import examine_clusters
-import recursion
-from scipy.optimize import curve_fit
-
-##############################################################################        
-   
-class Simulation:
-    """ data structure for storing general simulation information"""
-
-    def __init__(self, lx, ly, dt, nsteps, nbeads, nsamp, nbpf, density, kappa, \
-               fp, kT, bl, sigma, gamma):
-        
-        self.lx = float(lx)
-        self.ly = float(ly)
-        self.dt = dt
-        self.nsteps = int(nsteps)
-        self.nbeads = int(nbeads)
-        self.nsamp = 10000
-        self.nbpf = 51
-        self.density = 0.8
-        self.fp = fp
-        self.kappa = kappa
-        self.bl = 0.5
-        self.sigma = sigma
-        self.kT = kT
-        self.gamma_n = gamma
-        
-        ### normalize certain variables
-
-        self.nfils = self.nbeads/self.nbpf        
-        #self.lx /= self.bl
-        #self.ly /= self.bl   
-        self.dt *= self.nsamp
-        
-        ### define more simulation parameters
-        
-        self.length = self.nbpf*self.bl
-        #self.N_avg = np.average(self.nbpc)
-        #self.r_avg = self.bl*self.N_avg/2/np.pi
-        #self.tau_D = self.r_avg**2 * self.gamma_n * self.N_avg / self.kT
-        #self.tau_A = 2 * self.r_avg * self.gamma_n / self.fp
-        
-        return
-        
-##############################################################################
-
-class Beads:
-    """ data structure for storing particle/bead information"""
-    
-    def __init__(self, x, sim):
-        
-        ### assign bead positions
-        
-        self.x = x
-        
-        ### assign mol indices to beads
-        
-        self.cid = np.zeros((sim.nbeads), dtype=np.int32)-1
-        k = 0
-        for j in range(sim.nfils):
-            for n in range(sim.nbpf):
-                self.cid[k] = j
-                k += 1
-        
-        return
-
-##############################################################################
-        
-class Subplots:
-    """ plot structure"""
-    
-    totcnt = -1             # Total number of subplots 
-    
-    def __init__(self, f, l, s, b, t):
-        self.fig = f        # Figure axes handle
-        self.length = l     # Length of the subplot box 
-        self.sep = s        # Separation distance between subplots 
-        self.beg = b        # Beginning (offset) in the figure box
-        self.tot = t        # Total number of subplots in the x direction
-        
-        return
-        
-    def addSubplot(self):
-        """ add a subplot in the grid structure"""
-        
-        ### increase the number of subplots in the figure
-        
-        self.totcnt += 1
-        
-        ### get indices of the subplot in the figure
-        
-        self.nx = self.totcnt%(self.tot)
-        self.ny = self.totcnt/(self.tot)
-        
-        self.xbeg = self.beg + self.nx*self.length + self.nx*self.sep
-        self.ybeg = self.beg + self.ny*self.length + self.ny*self.sep
-        
-        return self.fig.add_axes([self.xbeg,self.ybeg,self.length,self.length])
-        
-##############################################################################
-        
-class linked_list:
-    """ linked list data structure to browse beads based on their position"""
-    
-    def __init__(self, x, y, sim, rcut):
-        
-        ### define starting values
-        
-        self.rcut = rcut
-        self.rcut2 = rcut**2      
-        self.nsegx = int(sim.lx/self.rcut)
-        self.nsegy = int(sim.ly/self.rcut)
-        self.llist = np.zeros((sim.nbeads), dtype = int) - 1
-        self.head = np.zeros((self.nsegx*self.nsegy), dtype = int) - 1
-
-        ### put all the beads inside the list
-        
-        for i in range(sim.nbeads):
-            segx = int(x[i]/sim.lx*self.nsegx)
-            segy = int(y[i]/sim.ly*self.nsegy)
-            cell = segx*self.nsegy + segy
-            self.llist[i] = self.head[cell]
-            self.head[cell] = i
-
-        return
+import argparse
 
 ##############################################################################
 
-def read_data(folder):
-    """ read simulation data through hdf5 file"""
-    
-    ### access the file
-    
-    fpath = folder + '/out.h5'
-    assert os.path.exists(fpath), "out.h5 does NOT exist for " + fpath
-    fl = h5py.File(fpath, 'r')
-    
-    ### read in the positions of beads
-    
-    x = np.asarray(fl['/positions/x'], dtype=np.float32)
+def find_clusters(x, y, dcrit, npoints, sim):
+    """ search for clusters; two points are defined as being
+        part of the same cluster if they are within dcrit distance of each other"""
 
-    ### read in the box info
+    ### allocate required arrays
 
-    lx = fl['/info/box/x'][...]
-    ly = fl['/info/box/y'][...]
+    clusters = np.zeros((npoints), dtype=np.int32) - 1
+    neighbors = np.zeros((npoints, npoints), dtype=np.int32)
 
-    ### read in the general simulation info
-    
-    dt = fl['/info/dt'][...]
-    nsteps = fl['/info/nsteps'][...]
-    nbeads = fl['/info/nbeads'][...]
-    nsamp = fl['/info/nsamp'][...]
+    ### generate a linked list
 
-    ### read in the mol information
-    
-    nbpf = fl['/param/nbpf'][...]
+    nsegx, nsegy, head, llist = gen_linked_list(x, y, sim.lx, sim.ly, dcrit, npoints)
 
-    ### read in the simulation parameters
-    
-    density = fl['/param/density'][...]
-    kappa = fl['/param/kappa'][...]
-    fp = fl['/param/fp'][...]
-    gamma = fl['/param/gamma'][...]
-    bl = fl['/param/bl'][...]
-    sigma = fl['/param/sigma'][...]
-    kT = fl['/param/kT'][...]
+    ### buld a neighborhood matrix based on the criterion dcrit
 
-    ### close the file
+    neighs = neighbors.ravel()
+    performance_tools = performance_toolsWrapper.Performance_tools()
+    performance_tools.fill_neigh_matrix(neighs, llist, head, nsegx, nsegy, x, y, npoints, sim.lx, sim.ly, dcrit)
 
-    fl.close()
-    
-    sim = Simulation(lx, ly, dt, nsteps, nbeads, nsamp, nbpf, density, kappa, \
-               fp, kT, bl, sigma, gamma)
-    beads = Beads(x, sim)
-    
-    return beads, sim
+    ### recursive search for clusters within the neighbor matrix
+
+    performance_tools.cluster_search(neighs, clusters, npoints)
+
+    return clusters
 
 ##############################################################################
 
-def calculate_defect_strength(directors):
-    """ calculate the defect strength"""
-    
-    dmax = (directors[-1] - directors[0])/2/np.pi
- 
-    return dmax
+def transform_cluster_data(clusters, npoints):
+    """ transform the data representation of clusters such that cluster list contains
+    the points inside the cluster"""
 
-##############################################################################
-    
-def calculate_nematic_directors(qxx, qxy, qyy, nseg):
-    """ calcualte the nematic directors inside the orthants"""
-    
-    ### calculate the nematic director
-    # calculate the eigenvector corresponding to the largest eigenvalue
-    # of the order parameter matrix
-    
-    directors = np.zeros((nseg), dtype=np.float64)
-    for j in range(nseg):
-        q = np.array([[qxx[j], qxy[j]], [qxy[j], qyy[j]]])
-        w, v = LA.eig(q)
-        idxmax = np.argmax(w)
-        directors[j] = math.atan2(v[1,idxmax], v[0,idxmax])  
+    ### find the maximum number of clusters
 
-    ### correct nematic directors by assuming no jumps > |pi/2|, as we have line symmetry
-    
-    corrected_directors = np.copy(directors)
-    for i in range(1, nseg):
-        dif = directors[i] - directors[i-1]
-        if dif > np.pi/2:
-            dif -= np.pi
-        if dif < -np.pi/2:
-            dif += np.pi
-        corrected_directors[i] = corrected_directors[i-1] + dif
-        
-    return directors, corrected_directors
+    clmax = max(clusters)
+
+    ### add empty lists to cluster list
+
+    cl_list = []
+    for j in range(clmax+1):
+        cl_list.append([])
+
+    ### fill lists with point ids
+
+    for i in range(npoints):
+        cid = clusters[i]
+        cl_list[cid].append(i)
+
+    return cl_list
 
 ##############################################################################
 
-def calculate_defect_orientation(corrected_directors):
-    """ calculate the angle of the defects"""
-    
-    ### All directors are with respective to the first (this will not work, most likely)
-    #corrected_directors -= np.min(corrected_directors)
-   
-    ### Fit a straight line
-    def line(x, A, B):
-        return A*x + B
-    xaxis = np.linspace(0, 2*np.pi, num=len(corrected_directors))
-    A, B = curve_fit(line, xaxis, corrected_directors)[0]
+def correct_cluster_pbc(x, y, clusters, lx, ly, dcrit, npoints):
+    """ correct the cluster point coordinates with periodic boundary conditions"""
 
-    ### Find intersection point with x + np.pi in radians
-    tail=-1
-    n = -5
+    ### get number of clusters
 
-    ### 0 < comet tail < 2*pi
-    while (tail<0.0 or tail>2.0*np.pi):
-    	tail = (n*np.pi-B)/(A-1)
-	n=n+1
-	if n==6:
-	    break
+    nclusters = len(clusters)
 
-    ### uncomment this if to ouput vector
-    #return np.cos(tail), np.sin(tail)	#x, y
+    ### initialize output clusters and isolated array
 
-    ### outputs the angle in radians
-    return tail  
-    
-##############################################################################
-    
-def calculate_order_param_matrix(xd, yd, nseg, x, y, phi_nematic, sim, cell_list):
-    """ calculate and average the order parameter matrix per orthant"""
-    
-    ### determine the cell of the current defect point
-    
-    segx = int(xd/sim.lx*cell_list.nsegx)
-    segy = int(yd/sim.ly*cell_list.nsegy)
-    cell = segx*cell_list.nsegy + segy
-    
-    ### allocate arrays
-    # q: the order parameter matrix to be averaged per orthant
-    # xcm, ycm: center of mass of orthants
-    
-    qxx = np.zeros((nseg), dtype=np.float64)
-    qxy = np.zeros((nseg), dtype=np.float64)
-    qyy = np.zeros((nseg), dtype=np.float64)
+    xcluster = np.copy(x)
+    ycluster = np.copy(y)
+    isolated = np.ones((nclusters), dtype=int)
 
-    xcm = np.zeros((nseg), dtype=np.float64)
-    ycm = np.zeros((nseg), dtype=np.float64)
+    ### loop over all clusters
 
-    counter = np.zeros((nseg), dtype=int)
+    for i in range(nclusters):
 
-    ### loop over the linked list of the current cell
-    
-    for a in range(-1,2):
-        i2 = (segx+a+cell_list.nsegx) % cell_list.nsegx
+        ### allocate array to store cluster + copies
 
-        ### loop over the linked list of the neighboring cells
+        npts = len(clusters[i])
 
-        for b in range(-1,2):
-            j2 = (segy+b+cell_list.nsegy) % cell_list.nsegy
+        ### expand cluster to periodic images
 
-            ### get head value of the neighboring cell
-            
-            cell = i2*cell_list.nsegy + j2
-            val = cell_list.head[cell]
+        xcl, ycl = expand_cluster(x, y, lx, ly, clusters, i)
 
-            ### loop over the beads in the selected cell
+        ### try first a simple 1D histogram method
 
-            while val != -1:
-                
-                xi = x[val]
-                yi = y[val]
+        #flag_1d = cluster_hist_1d(xcl, ycl, lx, ly, npts, dcrit)
 
-                ### check the distance from the bead to the defect point
-                
-                dx = misc_tools.nearest_neighbor(xi, xd, sim.lx)
-                dy = misc_tools.nearest_neighbor(yi, yd, sim.ly)
-                dsq = dx**2 + dy**2
-                
-                if dsq <= cell_list.rcut2:
-                    
-                    ### compute the angle of the vector from the bead to the defect point
-                    
-                    theta = math.atan2(dy, dx)
-                    if theta < 0:
-                        theta += 2*np.pi
-                        
-                    ### determine which octant the bead-point angle falls into 
-                    
-                    segi = int(theta/2/np.pi*nseg)
+        ### if the 1D histogram approach fails, correct the pbcs point by point
 
-                    ### calculate the bond orientations
-                    
-                    bx = np.cos(phi_nematic[val])
-                    by = np.sin(phi_nematic[val])
-                    
-                    ### average the order parameter matrix
-                    
-                    qxx[segi] += 2*bx**2 - 1
-                    qxy[segi] += 2*bx*by
-                    qyy[segi] += 2*by**2 - 1
+        #if flag_1d == 0:
+        #    isolated[i] = 0     # cluster is not isolated
+        #    correct_pbc_single(xcl, ycl, lx, ly, npts)
 
-                    ### calculate the center of mass of the orthants
-                    
-                    xcm[segi] += xi
-                    ycm[segi] += yi
-                    
-                    ### count the number of bonds in the orthants
-                    
-                    counter[segi] += 1
+        correct_pbc_single(xcl, ycl, lx, ly, npts)
 
-                ### get the next item from the linked list in the cell
-                
-                val = cell_list.llist[val]
+        ### adjust center of mass of the entire cluster
 
-    ### take the average of the nematic directors and center of masses per orthant
-    
-    qxx /= counter
-    qxy /= counter
-    qyy /= counter
-    
-    xcm /= counter
-    ycm /= counter
-    
-    return qxx, qxy, qyy, xcm, ycm
+        adjust_com_cluster(xcl, ycl, lx, ly, npts)
+
+        ### copy coordinates to the cluster array
+
+        for j in range(npts):
+            mi = clusters[i][j]
+            xcluster[mi] = xcl[j]
+            ycluster[mi] = ycl[j]
+
+    return xcluster, ycluster, isolated
 
 ##############################################################################
-        
-def compute_defects(xcmp, ycmp, beads, sim, rcut, dcut, step, spath):
-    """ recompute the defect strengths of the ultimate defect points"""
-    
-    ### allocate array to divide the full circle into orthants
-    
-    nseg = 10
-    
-    ### generate a cell based linked list to browse beads based on position
-    
-    x = beads.x[step, 0, :]
-    y = beads.x[step, 1, :]
-    cell_list = linked_list(x, y, sim, rcut)
-    
-    ### calculate the bead orientations
-    
-    phi = misc_tools.compute_orientation(x, y, sim.lx, sim.ly, sim.nbpf)
-    
-    ### generate phi_nematic array by turning the orientations headless
-    
-    phi_nematic = np.zeros((len(x)))
-    for i in range(len(x)):
-        pi = phi[i]
-        if pi < 0:
-            pi += np.pi
-        phi_nematic[i] = pi    
 
-    ndefects = len(xcmp)
-    fig_cnt = 0
-    defect_pts = []
-    pt_colors = []
-    for j in range(ndefects):
-        
-        xd = xcmp[j]
-        yd = ycmp[j]
+def expand_cluster(x, y, lx, ly, clusters, i):
+    """ expand the current cluster to periodic images"""
 
-        ### calculate and average the order parameter matrix per orthant
-       
-        qxx, qxy, qyy, xcm, ycm = calculate_order_param_matrix(xd, yd, nseg, x, y, \
-                                                               phi_nematic, sim, cell_list)
-        
-        ### calculate the nematic directors per orthant
-        
-        directors, corrected_directors = calculate_nematic_directors(qxx, qxy, qyy, nseg)
-    
-        ### determine the defect strength
-        
-        dmax = calculate_defect_strength(corrected_directors)
-        cc = 'colors'
-        
-        ### determine the defect orientation
-        
-        dorient = calculate_defect_orientation(corrected_directors)
-        
-        ### check for -1/2 defects
-        
-        if (dmax > -dcut-0.5 and dmax < dcut-0.5):
-            cc = 'r'
-            defect_pts.append([xd, yd, dmax, dorient])
-            pt_colors.append(cc)
-            
-        ### check +1/2 defects
-        
-        elif (dmax > 0.5-dcut and dmax < dcut+0.5):
-            cc = 'g'
-            defect_pts.append([xd, yd, dmax, dorient])
-            pt_colors.append(cc)
-        else:
-            print dmax
-        
-        ### plot the defects
-        
-#        if cc == 'r' or cc == 'g':
-#            fig_cnt += 1
-#            savepath = spath + 'fig_' + str(step) + '_'+ str(fig_cnt) + '.png'
-#            plot_defects.plot_defect(x, y, phi, phi_nematic, beads.cid, xd, yd, \
-#                                     directors, corrected_directors, \
-#                                     dmax, sim, cell_list, defect_pts, pt_colors, \
-#                                     xcm, ycm, savepath)
+    npts = len(clusters[i])
+    xcl = np.zeros((9*npts))
+    ycl = np.zeros((9*npts))
 
-    return defect_pts
-            
-        
+    ### create copies of the atoms of all clusters
+
+    l = 0
+    for j in range(npts):
+        mi = clusters[i][j]
+        xcl[l] = x[mi]
+        ycl[l] = y[mi]
+        l = l + 1
+
+    ### add pbc copies
+
+    for j in range(-1,2):
+        for k in range(-1,2):
+            if j == 0 and k == 0:
+                continue
+            for m in range(npts):
+                xcl[l] = xcl[m] + j*lx
+                ycl[l] = ycl[m] + k*ly
+                l = l + 1
+
+    return xcl, ycl
+
 ##############################################################################
 
-def save_data(points, sfl):
-    """ save the data on defect points"""
+def cluster_hist_1d(xcl, ycl, lx, ly, npts, dcrit):
+    """ try to detect cluster by 1d histograms to correct for pbcs"""
 
-    #savefolder = '/usr/users/iff_th2/duman/Defects/Output/'
-    
-    fl = open(sfl, 'w')
-    npoints = len(points)
-    for j in range(npoints):
-        fl.write(str(points[j][0]) + '\t' + str(points[j][1]) + '\t'
-                 + str(points[j][2]) + '\t' + str(points[j][3]) + '\n')
-    fl.close()
+    ### compute 1D histograms
+
+    nxbins = int(3*lx/(dcrit))
+    #bx = 3*lx/nxbins
+    hx, xedges = np.histogram(xcl, bins = nxbins, range = (-lx,2*lx))
+    nybins = int(3*ly/(dcrit))
+    #by = 3*ly/nybins
+    hy, yedges = np.histogram(ycl, bins = nybins, range = (-ly,2*ly))
+
+    ### check whether the approach is feasible
+
+    if 0 in hx and 0 in hy:  # 1d approach works
+
+        ### find boundaries
+
+        xmin = -1
+        xmax = -1
+        ymin = -1
+        ymax = -1
+        jstop = -1
+        for j in range(nxbins-1):
+            if hx[j] == 0 and hx[j+1] > 0:
+                xmin = xedges[j+1]
+                jstop = j
+                break
+        for j in range(jstop,nxbins-1):
+            if hx[j] > 0 and hx[j+1] == 0:
+                xmax = xedges[j+1]
+                break
+        for j in range(nybins-1):
+            if hy[j] == 0 and hy[j+1] > 0:
+                ymin = yedges[j+1]
+                jstop = j
+                break
+        for j in range(jstop,nybins-1):
+            if hy[j] > 0 and hy[j+1] == 0:
+                ymax = yedges[j+1]
+                break
+
+        ### map all point coordinates into the relevant area
+
+        for j in range(npts):
+            while xcl[j] < xmin:
+                xcl[j] += lx
+            while xcl[j] > xmax:
+                xcl[j] -= lx
+            while ycl[j] < ymin:
+                ycl[j] += ly
+            while ycl[j] > ymax:
+                ycl[j] -= ly
+        return 1
+    return 0
+
+##############################################################################
+
+def correct_pbc_single(xcl, ycl, lx, ly, npts):
+    """ correct periodic boundary conditions of all points one by one separately"""
+
+    ### loop over individual points in the cluster and connect nearest neighbors
+
+    for j in range(npts-1):
+        x0 = xcl[j]
+        y0 = ycl[j]
+        x1 = xcl[j+1]
+        y1 = ycl[j+1]
+        dx = nearest_neighbor(x0, x1, lx)
+        dy = nearest_neighbor(y0, y1, ly)
+        xcl[j+1] = x0 - dx
+        ycl[j+1] = y0 - dy
+
+    ### loop over all points in the cluster and adjust com position
+
+#    for j in range(npts):
+#        xcl[j] += -math.floor(xcl[j]/lx)*lx
+#        ycl[j] += -math.floor(ycl[j]/ly)*ly
 
     return
 
 ##############################################################################
 
-def load_data(loadfile):
-    """ load the data on possible defect points"""
-    
-    data = np.transpose(np.loadtxt(loadfile, dtype=np.float64))
+def adjust_com_cluster(xcl, ycl, lx, ly, npts):
+    """ move cluster such that com is in periodic box"""
 
-    return data
- 
+    comx = np.average(xcl[0:npts])
+    comy = np.average(ycl[0:npts])
+    xcl[0:npts] += -math.floor(comx/lx)*lx
+    ycl[0:npts] += -math.floor(comy/ly)*ly
+
+    return
+
 ##############################################################################
 
-def load_h5_data(loadfile):
-    """ load the data on possible defect points"""
-    
-    fl = h5py.File(loadfile, 'r')
-    x = np.array(fl['/xpos'], dtype=np.float32)
-    y = np.array(fl['/ypos'], dtype=np.float32)
-    d = np.array(fl['/dstr'], dtype=np.float32)
-    data = [x, y, d]
-    
-    return data
-                  
+def find_com_clusters(xcl, ycl, clusters, lx, ly):
+    """ find the center of mass of clusters"""
+
+    ### get the number of clusters
+
+    nclusters = len(clusters)
+    xcm = np.zeros((nclusters), dtype=np.float64)
+    ycm = np.zeros((nclusters), dtype=np.float64)
+
+    ### run over the clusters
+
+    for i in range(nclusters):
+
+        ### run over the points in the cluster
+        #print 'cluster', i, '\n\n'
+        npts = len(clusters[i])
+        for j in range(npts):
+            mi = clusters[i][j]     # this accesses the particle index
+            #if xcl[mi] < 0 or ycl[mi] < 0:
+            #print xcl[mi]*2., ycl[mi]*2., lx, lx*2.
+            xcm[i] += xcl[mi]
+            ycm[i] += ycl[mi]
+        xcm[i] /= npts
+        ycm[i] /= npts
+        #print 'COM=', xcm[i]*2., ycm[i]*2., '\n\n\n\n'
+        #exit()
+    ### put the center of masses back inside the box
+
+    xcm += -np.floor(xcm/lx)*lx
+    ycm += -np.floor(ycm/ly)*ly
+    #print zip(xcm*2., ycm*2.)
+    return xcm, ycm
+
+##############################################################################
+
+def find_com_clusters_weight(xcl, ycl, clusters, lx, ly, d):
+    """ find the center of mass of clusters"""
+
+    # clusters is a list containing the cluster id in the first dimension
+    # and the number of points inside the cluster inside the each list element
+    # d: is an array containing defect strength of the point
+    # periodic boundary conditions are taken care of
+
+    ### get the number of clusters
+
+    nclusters = len(clusters)
+
+    xcm = np.zeros((nclusters), dtype=np.float64)
+    ycm = np.zeros((nclusters), dtype=np.float64)
+
+    ### build weights array based on defect strengths
+
+    dweight = np.zeros(d.shape)
+    dtotal  = np.zeros(d.shape)         # normalization of weights
+                                        # sum of wghts of defects in a cluster=1
+    dmins = np.abs(d[d<0]+0.5)
+    dplus = np.abs(d[d>0]-0.5)
+    dmins[dmins==0.] = 0.00000001
+    dplus[dplus==0.] = 0.00000001
+    dweight[d<0] = 1./dmins    # -1/2 defect weights
+    dweight[d>0] = 1./dplus    # +1/2 defect weights
+    #dweight[d<0] = np.exp(-dmin**2/0.5)
+
+    ### run over all clusters
+
+    for i in range(nclusters):
+
+        ### run over all points in the cluster
+
+        npts = len(clusters[i])
+        for j in range(npts):
+            mi = clusters[i][j]         # accesses the particle index
+            dtotal[i] += dweight[mi]    # adds up total weight of all defects
+
+    ### run over the clusters
+
+    for i in range(nclusters):
+
+        ### run over the points in the cluster
+
+        npts = len(clusters[i])
+        for j in range(npts):
+            mi = clusters[i][j]         # accesses the particle index
+            xcm[i] += xcl[mi]*dweight[mi]
+            ycm[i] += ycl[mi]*dweight[mi]
+        xcm[i] /= dtotal[i]
+        ycm[i] /= dtotal[i]
+
+    ### put the center of masses back inside the box
+
+    xcm += -np.floor(xcm/lx)*lx
+    ycm += -np.floor(ycm/ly)*ly
+
+    return xcm, ycm
+
+##############################################################################
+
+def separate_clusters(cl_list, clusters, d):
+    """ separate clusters by their defect strength"""
+
+    ### get the number of clusters
+
+    nclusters = len(cl_list)
+    cl_defect_strength = {}
+    new_cluster_cnt = 0             # assign new clusters in case of a defect strength conflict
+
+    ### run over the clusters
+
+    for i in range(nclusters):
+
+        ### assign a placeholder defect strength to the cluster
+
+        cl_defect_strength[i] = 0
+        cluster_is_separated = False
+
+        ### run over the points in the cluster
+
+        npts = len(cl_list[i])
+        k = -1
+
+        for j in range(npts):
+
+            k += 1
+            mi = cl_list[i][k]
+            #print 'cluster_d = ', cl_defect_strength[i], ' / d = ', d[mi]
+
+            ### if the defect strength is assigned for the first time ...
+
+            if cl_defect_strength[i] == 0:
+                #print 'Cluster ', i, ' is assigned ', d[mi], ' for the first time.'
+                cl_defect_strength[i] = d[mi]
+
+            ### if the defect strength of the current point is different than the assigned one ...
+
+            elif cl_defect_strength[i] > 0 and d[mi] < 0:
+
+                if cluster_is_separated == False:
+                    cluster_is_separated = True
+                    new_cluster_cnt += 1
+                    new_cluster_id = len(cl_list)
+                    cl_list.append([])
+                    #print 'New cluster is created. new_cluster_cnt = ', new_cluster_cnt, 'new_cluster_id = ', new_cluster_id
+
+                cl_defect_strength[new_cluster_id] = d[mi]
+                clusters[mi] = new_cluster_id
+                cl_list[new_cluster_id].append(mi)
+                del cl_list[i][k]
+                k -= 1
+
+            ### if the defect strength of the current point is different than the assigned one ...
+
+            elif cl_defect_strength[i] < 0 and d[mi] > 0:
+
+                if cluster_is_separated == False:
+                    cluster_is_separated = True
+                    new_cluster_cnt += 1
+                    new_cluster_id = len(cl_list)
+                    cl_list.append([])
+                    #print 'New cluster is created. new_cluster_cnt = ', new_cluster_cnt, 'new_cluster_id = ', new_cluster_id
+
+                cl_defect_strength[new_cluster_id] = d[mi]
+                clusters[mi] = new_cluster_id
+                cl_list[new_cluster_id].append(mi)
+                del cl_list[i][k]
+                k -= 1
+
+    return
+
+##############################################################################
+
+def threshold_clusters(cl_list, thrs):
+    """ threshold the clusters by size, delete any cluster below the input size"""
+
+    ### get the number of clusters
+
+    nclusters = len(cl_list)
+
+    ### run over the clusters deleting any cluster smaller than the threshold
+
+    k = -1
+    for i in range(nclusters):
+        k += 1
+        size = len(cl_list[k])
+        if size < thrs:
+            del cl_list[k]
+            k -= 1
+
+    return
+##############################################################################
+
+def find_best_of_clusters(x, y, d, cl_list, clusters):
+    """ find the point with the best defect strength within the cluster"""
+
+    ### allocate per cluster arrays
+
+    nclusters = len(cl_list)
+    xcm = np.zeros((nclusters), dtype=np.float64)
+    ycm = np.zeros((nclusters), dtype=np.float64)
+
+    ### loop over each cluster to find the point with the best defect strength within it
+
+    for i in range(nclusters):
+
+        npts = len(cl_list[i])
+        dcluster = np.zeros((npts), dtype=np.float32)
+        for j in range(npts):
+            mi = cl_list[i][j]
+            if d[mi] > 0:
+                dcluster[j] = np.abs(d[mi]-0.5)
+            else:
+                dcluster[j] = np.abs(0.5+d[mi])
+        bestd = min(dcluster)
+        bestid = np.argmin(dcluster)
+        mi = cl_list[i][bestid]
+        xcm[i] = x[mi]
+        ycm[i] = y[mi]
+        print d[mi]
+
+    return xcm, ycm
+
+##############################################################################
+
+def cluster_analysis(points, dcrit, ncrit, sim, step, xall, yall, cid):
+    """ find clusters within the list of data points with a distance criterion"""
+
+    ### discern information about the data points
+
+    npoints = len(points[0])
+    print 'possible points -> ', npoints
+    x = np.array(points[0], dtype=np.float64)
+    y = np.array(points[1], dtype=np.float64)
+    d = np.array(points[2], dtype=np.float64)
+
+    ### find the clusters among the data points
+    # clusters is a per point array with each element representing the cluster id the point belongs to
+
+    clusters = find_clusters(x, y, dcrit, npoints, sim)
+
+    ### transform the cluster data such that each cluster contains a list of points in that cluster
+
+    cl_list = transform_cluster_data(clusters, npoints)
+
+    ### separate clusters by their defect strengths
+
+    separate_clusters(cl_list, clusters, d)
+
+    ### threshold the clusters -- note the per atom array clusters is not correct anymore below this point
+
+    threshold_clusters(cl_list, ncrit)
+
+    ### correct the cluster point positions with periodic boundary conditions
+
+    xclusters, yclusters, isolated = correct_cluster_pbc(x, y, cl_list, sim.lx, sim.ly, dcrit, npoints)
+
+    ### find the center of mass of clusters
+
+    xcm, ycm = find_best_of_clusters(x, y, d, cl_list, clusters)
+    #xcm, ycm = find_com_clusters(xclusters, yclusters, cl_list, sim.lx, sim.ly)
+    #xcm, ycm = find_com_clusters_weight(xclusters, yclusters, cl_list, sim.lx, sim.ly, d)
+
+    ### plot the clusters
+
+    plot_defects.plot_clusters(xclusters, yclusters, \
+        xcm, ycm, cl_list, clusters, sim, xall, yall, cid, step)
+
+    return xcm, ycm
+
+##############################################################################
 ##############################################################################
 
 def main():
-    
+
     ### get the data folder
-    
+
     parser = argparse.ArgumentParser()
     parser.add_argument("-fl", "--folder", nargs="?", \
-                        const='/usr/users/iff_th2/duman/Defects/Output/', \
+                        const='/usr/users/iff_th2/duman/Defe/', \
                         help="Folder containing data")
     parser.add_argument("-sfl", "--savefolder", nargs="?", \
                         const='/usr/users/iff_th2/duman/Defects/Output/cpp/', \
                         help="Folder to save the data inside")
     parser.add_argument("-figfl", "--figfolder", nargs="?", \
                         const='/usr/users/iff_th2/duman/Defects/Output/Figures/', \
-                        help="Folder to save the figures inside")  
+                        help="Folder to save the figures inside")
     parser.add_argument("-ti", "--inittime", nargs="?", const=100, type=int, help="Initial time step")
-    parser.add_argument("-tf", "--fintime", nargs="?", const=153, type=int, help="Final timestep")            
-    parser.add_argument("-s","--save_eps", action="store_true", help="Decide whether to save in eps or not")            
+    parser.add_argument("-tf", "--fintime", nargs="?", const=153, type=int, help="Final timestep")
+    parser.add_argument("-s","--save_eps", action="store_true", help="Decide whether to save in eps or not")
     args = parser.parse_args()
-    
+
     ### read the data and general information from the folder
-    
+
     beads, sim = read_data(args.folder)
-    
+
     rcut = 15.              # size of the interrogation circle
     dcut = 0.1              # defect strength cut
     dcrit = 8.              # clustering distance threshold criteria
     ncrit = 15              # clustering size threshold criteria
 
     for step in range(args.inittime, args.fintime):
-        
+
         print 'step / last_step: ', step, args.fintime
-        
+
         ### load the possible defect points
-        
+
         sfilepath = args.folder + 'possible_defect_pts_cpp_' + str(step) + '.h5'
         possible_defect_pts = load_h5_data(sfilepath)
-        
+
         ### cluster the possible defect points and plot the cluster
-        
+
         xcm, ycm = examine_clusters.cluster_analysis(possible_defect_pts, dcrit, ncrit, sim, step, \
                                                      beads.x[step, 0, :], beads.x[step, 1, :], beads.cid)
-    
+
         ### for each of the defect points found by clustering calculate the defect strength and plot each point
-    
-        defect_pts = compute_defects(xcm, ycm, beads, sim, rcut, dcut, step, args.figfolder)  
-    
+
+        defect_pts = compute_defects(xcm, ycm, beads, sim, rcut, dcut, step, args.figfolder)
+
         ### save the ultimate defect points
-        
+
         sfilepath = args.savefolder + 'defect_pts_' + str(step) + '.txt'
         save_data(defect_pts, sfilepath)
-    
+
     return
-    
+
 ##############################################################################
 
 if __name__ == '__main__':
-    main()    
-    
+    main()
+
 ##############################################################################
+

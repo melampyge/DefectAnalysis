@@ -96,8 +96,8 @@ void read_sim_data (char *filename, int &nsteps, int &nbeads,
   
   // read in simulation data
 
-  lx = read_double_data(file, "/params/x", d_buffer);
-  ly = read_double_data(file, "/params/y", d_buffer);
+  lx = read_double_data(file, "/params/lx", d_buffer);
+  ly = read_double_data(file, "/params/ly", d_buffer);
   dt = read_double_data(file, "/params/dt", d_buffer);
   nsteps = read_integer_data(file, "/sim/nsteps", i_buffer);
   nbeads = read_integer_data(file, "/sim/nbeads", i_buffer);
