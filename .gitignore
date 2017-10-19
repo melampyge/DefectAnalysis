@@ -1,0 +1,10 @@
+.DS_Store
+run.sh
+bin/
+build/
+*.pyc
+*~
+*/run.sh
+*/*/run.sh
+.ropeproject
+
