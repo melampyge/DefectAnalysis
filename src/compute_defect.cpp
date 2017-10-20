@@ -22,9 +22,6 @@ void average_order_param_matrix (double *qxx, double *qxy, double *qyy, int *cou
   
    // find the segment (hash index) of the point
   
-  xd = calc_img_pos(xd, lx);
-  yd = calc_img_pos(yd, ly);
-
   int segx = static_cast<int>(xd/lx*nsegx);
   int segy = static_cast<int>(yd/ly*nsegy);
   int seg = segx*nsegy + segy;
@@ -33,7 +30,7 @@ void average_order_param_matrix (double *qxx, double *qxy, double *qyy, int *cou
   
   for (int a = -1; a < 2; a++) {
     int i = (segx+a+nsegx)%nsegx;
-        
+
     for (int b = -1; b < 2; b++) {
       int j = (segy+b+nsegy)%nsegy;
       
@@ -44,10 +41,10 @@ void average_order_param_matrix (double *qxx, double *qxy, double *qyy, int *cou
       
       while (val != -1) {
 	
-	      double xi = calc_img_pos(x[val], lx);
-	      double yi = calc_img_pos(y[val], ly);
-	      
 	      // calculate the vector from the bead to the point
+        
+        double xi = x[val];
+        double yi = y[val];
 	      
 	      double dx = xi - xd;
 	      dx = neigh_min_central(dx, lx);
@@ -274,9 +271,11 @@ void search_main_pts (double *xdefects, double *ydefects, double *ddefects, int 
     
     // compute the defect strength of the point
     
-    double dst = compute_single_defect(xpoints[i], ypoints[i], x, y, phi, head, llist, rcut, nsegx, nsegy, lx, ly);
+    double dst = compute_single_defect(xpoints[i], ypoints[i], 
+        x, y, phi, head, llist, rcut, nsegx, nsegy, lx, ly);
     
-    // check for -1/2 defects and +1/2 defects, else regenerate a random point in the next time step
+    // check for -1/2 defects and +1/2 defects, 
+    // else regenerate a random point in the next time step
     
     double dlabel = 0.;
     if (dst > -dcut-0.5 && dst < dcut-0.5) {

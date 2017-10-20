@@ -32,8 +32,6 @@ def gen_linked_list(x, y, lx, ly, dcrit, npoints):
     ### fill list and head
 
     for i in range(npoints):
-        xi = calc_img_pos(x[i], sim.lx)
-        yi = calc_img_pos(y[i], sim.ly)
         segx = int(x[i]/lx*nsegx)
         segx = (segx+nsegx) % nsegx
         segy = int(y[i]/ly*nsegy)
@@ -66,7 +64,7 @@ def compute_orientation(x, y, lx, ly, npol):
     # number of molecules
 
     natoms = len(x)
-    nmol = natoms/npol
+    nmol = int(natoms/npol)
 
     # allocate aray for results
 

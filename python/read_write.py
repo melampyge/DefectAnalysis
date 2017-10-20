@@ -6,6 +6,7 @@
 import numpy as np
 import os
 import h5py
+import data_structures
 
 ##############################################################################
 
@@ -42,9 +43,9 @@ def read_data(folder):
 
     fl.close()
 
-    sim = Simulation(lx, ly, dt, nsteps, nbeads, nbpp, \
+    sim = data_structures.Simulation(lx, ly, dt, nsteps, nbeads, nbpp, \
         npols, density, kappa, fp, bl, sigma)
-    beads = Beads(x, sim)
+    beads = data_structures.Beads(x, sim)
 
     return beads, sim
 
@@ -57,7 +58,7 @@ def save_data(points, sfl):
     npoints = len(points)
     for j in range(npoints):
         fl.write(str(points[j][0]) + '\t' + str(points[j][1]) + '\t'
-                 + str(points[j][2]) + '\t' + str(points[j][3]) + '\n')
+                 + str(points[j][2]) + '\n')
     fl.close()
 
     return

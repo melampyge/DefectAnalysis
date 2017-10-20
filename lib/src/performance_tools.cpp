@@ -51,7 +51,7 @@ class Performance_tools {
 	    while (val1 != -1) {
 
 	      double x1 = x[val1]/lx;
-              double y1 = y[val1]/ly;
+        double y1 = y[val1]/ly;
 	      
 	      // walk along the linked list in the neighbor cell
 
@@ -71,7 +71,6 @@ class Performance_tools {
                     double rsq = dx*dx + dy*dy;
 
                     if (rsq < dcrit2) {
-// 		      cout << val1 << "\t" << val2 << "\t" << (unsigned int)(val1*npoints + val2) << "\t" << (unsigned int)(val2*npoints + val1) << "\t" << npoints << "\t" << (unsigned int)(npoints*npoints) << endl;
                       neighs[(unsigned int)(val1*npoints + val2)] += 1;
                       neighs[(unsigned int)(val2*npoints + val1)] += 1;
                     }

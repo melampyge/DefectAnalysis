@@ -7,6 +7,7 @@ import numpy as np
 import os
 import h5py
 import math
+import misc_tools
 
 ##############################################################################
 
@@ -60,10 +61,8 @@ class linked_list:
         ### put all the beads inside the list
 
         for i in range(sim.nbeads):
-            xi = misc_tools.calc_img_pos(x[i], sim.lx)
-            yi = misc_tools.calc_img_pos(y[i], sim.ly)
-            segx = int(xi/sim.lx*self.nsegx)
-            segy = int(yi/sim.ly*self.nsegy)
+            segx = int(x[i]/sim.lx*self.nsegx)
+            segy = int(y[i]/sim.ly*self.nsegy)
             cell = segx*self.nsegy + segy
             self.llist[i] = self.head[cell]
             self.head[cell] = i
@@ -110,7 +109,7 @@ class Beads:
 
         ### assign bead positions
 
-        self.xu = xu
+        self.xu = x
 
         ### assign mol indices to beads
 
@@ -120,6 +119,12 @@ class Beads:
             for n in range(sim.nbpp):
                 self.cid[k] = j
                 k += 1
+
+        return
+
+    def calc_img_pos(self, l):
+
+        self.xi = self.xu - l*np.floor(self.xu/l)
 
         return
 

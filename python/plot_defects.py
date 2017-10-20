@@ -61,24 +61,26 @@ def plot_clusters(xp, yp, xcmp, ycmp, cl_list, cl_id, sim, xallp, yallp, cid, st
 
     quant_steps = 2056
     norm_cluster = mpl.colors.Normalize(vmin=0, vmax=len(cl_list))
-    norm_filid = mpl.colors.Normalize(vmin=0, vmax=sim.nfils)
+    #norm_filid = mpl.colors.Normalize(vmin=0, vmax=sim.npols)
     num_ticks = 5
 
     ### plot the frame
 
     subp = data_structures.Subplots(fig, ax_len, ax_sep, ax_b, total_subplots_in_x)
     ax0 = subp.addSubplot()
-    ax0.axis('equal')
-    line0 = ax0.scatter(x, y, s=10, c=cl_id, cmap=plt.cm.get_cmap('jet',quant_steps),
-                edgecolors='None', alpha=0.7, vmin=0, vmax=len(cl_list), norm=norm_cluster, rasterized=True)
+    line0 = ax0.scatter(x, y, s=3, c=cl_id, cmap=plt.cm.get_cmap('jet',quant_steps),
+                edgecolors='None', alpha=0.3, vmin=0, vmax=len(cl_list), norm=norm_cluster, rasterized=True)
+    #line0 = ax0.scatter(x, y, s=3, c=cl_id, cmap=plt.cm.get_cmap('jet',quant_steps),
+    #            edgecolors='None', alpha=0.3, vmin=0, vmax=len(cl_list), norm=norm_cluster, rasterized=True)
 #    line1 = ax0.scatter(xall, yall, s=1, c=cid, cmap=plt.cm.get_cmap('jet',quant_steps),
-#                edgecolors='None', alpha=0.4, vmin=0, vmax=sim.nfils, norm=norm_filid, rasterized=True)
-    ax0.plot(xcm, ycm, 'x', markersize=10, color='k')
+#                edgecolors='None', alpha=0.4, vmin=0, vmax=sim.npols, norm=norm_filid, rasterized=True)
+    ax0.scatter(xcm, ycm, s=100, color='k', alpha=1.0)
+    ax0.axis('scaled')
 
     ### labels
 
-    ax0.set_xlabel("$x/r_{0}$", fontsize=40)
-    ax0.set_ylabel("$y/r_{0}$", fontsize=40)
+    ax0.set_xlabel("$x/r_{0}$", fontsize=30)
+    ax0.set_ylabel("$y/r_{0}$", fontsize=30)
 
     ### limits
 
@@ -89,11 +91,11 @@ def plot_clusters(xp, yp, xcmp, ycmp, cl_list, cl_id, sim, xallp, yallp, cid, st
 
     #ax0.xaxis.set_ticks(np.linspace(0, lx, num_ticks, endpoint=True))
     #ax0.yaxis.set_ticks(np.linspace(0, ly, num_ticks, endpoint=True))
-    #ax0.tick_params(axis='both', which='major', labelsize=20)
+    ax0.tick_params(axis='both', which='major', labelsize=20)
 
     ### save
 
-    plt.savefig(savepath, dpi=200, bbox_inches='tight', pad_inches=0.08)
+    plt.savefig(savepath, dpi=300, bbox_inches='tight', pad_inches=0.08)
     fig.clf()
 
     return
@@ -106,6 +108,7 @@ def pretty_plot(xp, yp, cid, xdp, ydp, tail, dmax, cell_list, sim, savepath):
     print "Plotting"
 
     ### normalize for plotting purposes
+
     lx = sim.lx/sim.bl
     ly = sim.ly/sim.bl
     x = xp/sim.bl
@@ -122,7 +125,7 @@ def pretty_plot(xp, yp, cid, xdp, ydp, tail, dmax, cell_list, sim, savepath):
 
     quant_steps = 2056
     norm_orient = mpl.colors.Normalize(vmin=-np.pi, vmax=np.pi)
-    norm_filid = mpl.colors.Normalize(vmin=0, vmax=sim.nfils)
+    norm_filid = mpl.colors.Normalize(vmin=0, vmax=sim.npols)
     num_ticks = 5
 
     ### plot the frame
@@ -130,7 +133,7 @@ def pretty_plot(xp, yp, cid, xdp, ydp, tail, dmax, cell_list, sim, savepath):
     ### 2) the entire field with filament ids
 
 #    line1 = ax1.scatter(x, y, s=1, c=cid, cmap=plt.cm.get_cmap('jet',quant_steps),
-#                edgecolors='None', alpha=0.4, vmin=0, vmax=sim.nfils, norm=norm_filid)
+#                edgecolors='None', alpha=0.4, vmin=0, vmax=sim.npols, norm=norm_filid)
     line1 = ax1.scatter(x, y, s=1, c=cid, cmap=plt.cm.get_cmap('hsv',quant_steps),
                 edgecolors='None', alpha=0.4, vmin=-np.pi, vmax=np.pi, norm=norm_filid)
 
@@ -192,7 +195,7 @@ def pretty_plot(xp, yp, cid, xdp, ydp, tail, dmax, cell_list, sim, savepath):
     cpp = np.concatenate((cl, cr, cb, ct, ctl, ctr, cbl, cbr))
 
 #    line2 = ax1.scatter(xpp, ypp, s=1, c=cpp, cmap=plt.cm.get_cmap('jet',quant_steps),
-#                edgecolors='None', alpha=0.4, vmin=0, vmax=sim.nfils, norm=norm_filid)
+#                edgecolors='None', alpha=0.4, vmin=0, vmax=sim.npols, norm=norm_filid)
     line2 = ax1.scatter(xpp, ypp, s=1, c=cpp, cmap=plt.cm.get_cmap('hsv',quant_steps),
                 edgecolors='None', alpha=0.4, vmin=-np.pi, vmax=np.pi, norm=norm_filid)
 
@@ -259,12 +262,12 @@ def pretty_plot(xp, yp, cid, xdp, ydp, tail, dmax, cell_list, sim, savepath):
     ax1.add_collection(le1)
     ax1.add_collection(bc1)
 
-    ax1.axis('equal')
+    ax1.axis('scaled')
     plt.axis('off')
     #plt.savefig(savepath, dpi=200, bbox_inches='tight')
 
     plt.tight_layout()
-    plt.savefig(savepath, bbox_inches='tight', dpi=200)
+    plt.savefig(savepath, bbox_inches='tight', dpi=300)
     fig.clf()
 
     return
@@ -279,6 +282,8 @@ def plot_defect(xp, yp, phi, phi_nematic, cid, xdp, ydp, directors, corrected_di
 
     ### normalize for plotting purposes
 
+    xp -= np.floor(xp/sim.lx)*sim.lx
+    yp -= np.floor(yp/sim.ly)*sim.ly
     lx = sim.lx/sim.bl
     ly = sim.ly/sim.bl
     x = xp/sim.bl
@@ -305,7 +310,7 @@ def plot_defect(xp, yp, phi, phi_nematic, cid, xdp, ydp, directors, corrected_di
 
     quant_steps = 2056
     norm_orient = mpl.colors.Normalize(vmin=-np.pi, vmax=np.pi)
-    norm_filid = mpl.colors.Normalize(vmin=0, vmax=sim.nfils)
+    norm_filid = mpl.colors.Normalize(vmin=0, vmax=sim.npols)
     num_ticks = 5
 
 
@@ -351,7 +356,7 @@ def plot_defect(xp, yp, phi, phi_nematic, cid, xdp, ydp, directors, corrected_di
     cax0.scatter(xval, yval, c=xval, s=300, cmap=plt.cm.get_cmap('hsv',quant_steps), norm=norm_orient, linewidths=0)
     cax0.set_xticks([])
     cax0.set_yticks([])
-    cax0.set_title('$\\phi$',fontsize=40)
+    cax0.set_title('$\\theta$',fontsize=40)
     cax0.set_rlim([-1,1])
     cax0.set_axis_off()
 
@@ -362,7 +367,7 @@ def plot_defect(xp, yp, phi, phi_nematic, cid, xdp, ydp, directors, corrected_di
     ax1.axis('equal')
 
     line1 = ax1.scatter(x, y, s=1, c=cid, cmap=plt.cm.get_cmap('jet',quant_steps),
-                edgecolors='None', alpha=0.4, vmin=0, vmax=sim.nfils, norm=norm_filid, rasterized=True)
+                edgecolors='None', alpha=0.4, vmin=0, vmax=sim.npols, norm=norm_filid, rasterized=True)
 
     ### labels
 

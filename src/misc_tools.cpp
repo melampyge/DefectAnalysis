@@ -45,13 +45,10 @@ void gen_linked_list (double *llist, double *head, double rcut, int nsegx, int n
   /* generate a hashed linked list to browse data points via positions */
   
   for (int i = 0; i < nbeads; i++) {
-    
-    double xi = calc_img_pos(x[i], lx);
-    double yi = calc_img_pos(y[i], ly);
 
-    int segx = static_cast<int>(xi/lx*nsegx);
+    int segx = static_cast<int>(x[i]/lx*nsegx);
     segx = (segx+nsegx) % nsegx;
-    int segy = static_cast<int>(yi/ly*nsegy);
+    int segy = static_cast<int>(y[i]/ly*nsegy);
     segy = (segy+nsegy) % nsegy;
     int seg = segx*nsegy + segy;
     llist[i] = head[seg];
@@ -89,11 +86,12 @@ void calc_headless_orient(double *phi, double *x, double *y,
 	      dx = x[k+1] - x[k-1];
 	      dy = y[k+1] - y[k-1];
       }
+
+      // correct for pbc
       
-      // correct for periodic boundary conditions
-      
-      dx = neigh_min(dx, lx);
-      dy = neigh_min(dy, ly);
+      dx = neigh_min_central(dx, lx);
+      dy = neigh_min_central(dy, ly);
+
       
       // calculate the angle and turn it headless
       

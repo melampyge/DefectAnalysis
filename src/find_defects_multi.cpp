@@ -139,6 +139,10 @@ int main (int argc, char *argv[]) {
     // load the positions of this timestep
     
     read_single_pos_data(step, dataset, dataspace, x, y, nbeads);
+    for (int j = 0; j < nbeads; j++) {
+      x[j] = calc_img_pos(x[j], lx);
+      y[j] = calc_img_pos(y[j], ly);
+    }
 
     // allocate hashed linked list arrays
     

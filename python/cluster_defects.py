@@ -153,8 +153,8 @@ def correct_pbc_single(xcl, ycl, lx, ly, npts):
         y0 = ycl[j]
         x1 = xcl[j+1]
         y1 = ycl[j+1]
-        dx = nearest_neighbor(x0, x1, lx)
-        dy = nearest_neighbor(y0, y1, ly)
+        dx = misc_tools.nearest_neighbor(x0, x1, lx)
+        dy = misc_tools.nearest_neighbor(y0, y1, ly)
         xcl[j+1] = x0 - dx
         ycl[j+1] = y0 - dy
 
@@ -284,7 +284,7 @@ def separate_clusters(cl_list, clusters, d):
 
     nclusters = len(cl_list)
     cl_defect_strength = {}
-    new_cluster_cnt = 0             # assign new clusters in case of a defect strength conflict
+    new_cluster_cnt = 0         # assign new clusters in case of a defect strength conflict
 
     ### run over the clusters
 
@@ -368,6 +368,7 @@ def threshold_clusters(cl_list, thrs):
             k -= 1
 
     return
+
 ##############################################################################
 
 def find_best_of_clusters(x, y, d, cl_list, clusters):
@@ -442,8 +443,8 @@ def cluster_analysis(points, dcrit, ncrit, sim, step, xall, yall, cid):
 
     ### plot the clusters
 
-    plot_defects.plot_clusters(xclusters, yclusters, \
-        xcm, ycm, cl_list, clusters, sim, xall, yall, cid, step)
+    #plot_defects.plot_clusters(xclusters, yclusters, \
+    #    xcm, ycm, cl_list, clusters, sim, xall, yall, cid, step)
 
     return xcm, ycm
 
@@ -453,30 +454,31 @@ def main():
 
     ### get the data folder
 
-    parser = argparse.ArgumentParser()
+    parser = argparse.argumentparser()
     parser.add_argument("-sdfl", "--simdatafolder", \
-                        help="Folder containing the simulation data")
+                        help="folder containing the simulation data")
     parser.add_argument("-dfl", "--datafolder", \
-                        help="Folder containing analysis data")
+                        help="folder containing analysis data")
     parser.add_argument("-sfl", "--savefolder", \
-                        help="Folder to save the resulting analysis data inside")
+                        help="folder to save the resulting analysis data inside")
     parser.add_argument("-figfl", "--figfolder", \
-                        help="Folder to save the figures inside")
+                        help="folder to save the figures inside")
     parser.add_argument("-ti", "--inittime", nargs="?", const=10, \
-                        type=int, help="Initial time step")
+                        type=int, help="initial time step")
     parser.add_argument("-tf", "--fintime", nargs="?", const=100, \
-                        type=int, help="Final timestep")
+                        type=int, help="final timestep")
     parser.add_argument("-s","--savepdf", action="store_true", \
-                        help="Decide whether to save in pdf or not")
+                        help="decide whether to save in pdf or not")
     args = parser.parse_args()
 
     ### read the data and general information from the folder
 
     beads, sim = read_write.read_data(args.simdatafolder)
+    beads.calc_img_pos(sim.lx)
 
     rcut = 15.              # size of the interrogation circle
     dcut = 0.1              # defect strength cut
-    dcrit = 8.              # clustering distance threshold criteria
+    dcrit = 9.              # clustering distance threshold criteria
     ncrit = 15              # clustering size threshold criteria
 
     for step in range(args.inittime, args.fintime):
@@ -491,7 +493,7 @@ def main():
         ### cluster the possible defect points and plot the cluster
 
         xcm, ycm = cluster_analysis(possible_defect_pts, dcrit, ncrit, sim, step, \
-            beads.xu[step, 0, :], beads.xu[step, 1, :], beads.cid)
+            beads.xi[step, 0, :], beads.xi[step, 1, :], beads.cid)
 
         ### for each of the defect points found by clustering
         # calculate the defect strength and plot each point
@@ -502,7 +504,7 @@ def main():
         ### save the ultimate defect points
 
         sfilepath = args.savefolder + 'defect_pts_' + str(step) + '.txt'
-        save_data(defect_pts, sfilepath)
+        read_write.save_data(defect_pts, sfilepath)
 
     return
 
